@@ -1,9 +1,9 @@
 CC:=gcc
 ifdef WINDIR
-    PREFIX:=/usr/local
     PREFIX:=$(USERPROFILE)
-else
     EXE_EXT:=.exe
+else
+    PREFIX:=/usr/local
     EXE_EXT:=
 endif
 BINDIR:=$(PREFIX)/bin
