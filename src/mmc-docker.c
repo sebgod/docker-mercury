@@ -106,6 +106,11 @@ main(int argc, char *argv[])
     ADD(" -v "); ADD(tmp); ADD(":/tmp:rw");
     ADD(" -v "); ADD(pwd); ADD(":/var/tmp/mercury:rw");
     ADD(" "); ADD(env_docker);
+#ifdef _WIN32
+    /* disable symlinks since they do not work properly on
+     * Windows by default */
+    ADD(" --no-use-symlinks");
+#endif
     for (i = 1; i < argc; i++) {
         ADD(" "); ADD(argv[i]);
     }
