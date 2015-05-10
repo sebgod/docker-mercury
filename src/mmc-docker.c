@@ -111,6 +111,10 @@ main(int argc, char *argv[])
      * Windows by default */
     ADD(" --no-use-symlinks");
 #endif
+    /* as the shared libraries are within the container,
+     * disable shared linkage for now.
+     * TODO: use a volume for the Mercury libraries */
+    ADD(" --linkage static");
     for (i = 1; i < argc; i++) {
         ADD(" "); ADD(argv[i]);
     }
