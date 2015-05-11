@@ -12,11 +12,16 @@ OUT:=bin/mmc-docker$(EXE_EXT)
 CP:=cp
 INSTALL:=$(CP) -u
 MKDIR:=mkdir
+RM:=/bin/rm
 
 .DEFAULT: default
 
 .PHONY: default
 default: $(OUT)
+
+.PHONY: clean
+clean:
+	-$(RM) $(OUT)
 
 .PHONY: install
 install: $(OUT)
