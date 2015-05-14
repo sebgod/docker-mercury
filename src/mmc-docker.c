@@ -39,15 +39,24 @@
 #define CMD_LINE_LEN (2048 - 1)
 
 /* complex string manipulation using weak pointers */
-#define INIT(store) char *_temp_buf = (store)
-#define ADD(str) do { _temp_buf = append(_temp_buf, (str), &limit); } while (0)
+#define INIT(store) char *_temp_buf = (store); \
+    int _temp_limit = sizeof((store))
+#define ADD(str) \
+    do { _temp_buf = append(_temp_buf, (str), &_temp_limit); } while (0)
 #define COMPLETE do { *_temp_buf = '\0'; } while (0)
+#define SECURE(x) do { (x)[sizeof((x)) - 1] = '\0'; } while (0)
 
 char *
 get_env_or_default(char *name, char *def)
 {
     char *value;
     return ((value = getenv(name)) ? value : def);
+}
+
+int
+env_is_true(char *value)
+{
+    return !strcmp(value, "1");
 }
 
 char *
@@ -90,14 +99,15 @@ unix_path(char *val)
     }
 }
 
+#define DEFAULT_EXE "docker"
 #define DEFAULT_PREFIX "sebgod/mercury-"
+#define DEFAULT_CHANNEL "stable"
 #define DEFAULT_VERSION "latest"
+#define DEFAULT_CROSS_ARCH "i686-w64-mingw32"
 #ifdef _WIN32
-    #define DEFAULT_CHANNEL "stable-cross"
-    #define DEFAULT_SUFFIX  "-i686-w64-mingw32"
+    #define DEFAULT_CROSS "1"
 #else
-    #define DEFAULT_CHANNEL "stable"
-    #define DEFAULT_SUFFIX  ""
+    #define DEFAULT_CROSS "0"
 #endif
 
 int
@@ -105,67 +115,107 @@ main(int argc, char *argv[])
 {
     char cmd[CMD_LINE_LEN];
     INIT(cmd);
+    char *env_tmp;
+    char *env_docker_exe;
+    char *env_docker_interactive;
     char *env_docker_prefix;
     char *env_docker_channel;
     char *env_docker_version;
-    char *env_docker_suffix;
-    char *env_temp;
-    char pwd[FILENAME_MAX] = {0};
-    char tmp[FILENAME_MAX] = {0};
-    int limit = CMD_LINE_LEN;
-    int i, len;
+    char *env_docker_cross;
+    char *env_docker_cross_arch;
+    char path_pwd[FILENAME_MAX] = {0};
+    char path_tmp[FILENAME_MAX] = {0};
+    int is_interactive;
 
-    env_temp = get_env_or_default("MERCURY_TMP",
-            get_env_or_default("TEMP", "/tmp"));
-    len = strlen(env_temp);
-    len = MIN(len, sizeof(tmp));
-    strncpy(tmp, env_temp, len);
+    env_docker_interactive =
+        get_env_or_default("MERCURY_DOCKER_INTERACTIVE", "0");
+    is_interactive = env_is_true(env_docker_interactive);
 
-    COND_PERROR_RET(!GetCurrentDir(pwd, sizeof(pwd)),
-            "cannot obtain current working directory");
-    tmp[sizeof(tmp) - 1] = '\0';
-    pwd[sizeof(pwd) - 1] = '\0';
+    {
+        int len;
+        env_tmp = get_env_or_default("MERCURY_TMP",
+                get_env_or_default("TMP", "/tmp"));
+        len = strlen(env_tmp);
+        len = MIN(len, sizeof(path_tmp) - 1);
+        strncpy(path_tmp, env_tmp, len);
+        unix_path(path_tmp);
+    }
 
-    unix_path(pwd);
-    unix_path(tmp);
+    {
+        COND_PERROR_RET(!GetCurrentDir(path_pwd, sizeof(path_pwd)),
+                "cannot obtain current working directory");
+        unix_path(path_pwd);
+        SECURE(path_pwd);
+    }
 
+    env_docker_exe =
+        get_env_or_default("MERCURY_DOCKER_EXE", DEFAULT_EXE);
     env_docker_prefix =
         get_env_or_default("MERCURY_DOCKER_PREFIX", DEFAULT_PREFIX);
     env_docker_channel =
         get_env_or_default("MERCURY_DOCKER_CHANNEL", DEFAULT_CHANNEL);
     env_docker_version =
         get_env_or_default("MERCURY_DOCKER_VERSION", DEFAULT_VERSION);
-    env_docker_suffix =
-        get_env_or_default("MERCURY_DOCKER_SUFFIX", DEFAULT_SUFFIX);
+    env_docker_cross =
+        get_env_or_default("MERCURY_DOCKER_CROSS",
+                is_interactive ? "0" : DEFAULT_CROSS);
+    env_docker_cross_arch =
+        get_env_or_default("MERCURY_DOCKER_CROSS_ARCH", DEFAULT_CROSS_ARCH);
     
-    ADD("docker run -it --read-only=true");
+    ADD(env_docker_exe);
+    ADD(" run -i --read-only=true");
+    if (is_interactive) {
+        ADD(" --entrypoint bash");
+    }
 #ifndef _WIN32
     ADD(" -u `id -u`");
 #endif
-    ADD(" -v "); ADD(tmp); ADD(":/tmp:rw");
-    ADD(" -v "); ADD(pwd); ADD(":/var/tmp/mercury:rw");
-    /* composing the repository reference */
-    ADD(" ");
-    ADD(env_docker_prefix);
-    ADD(env_docker_channel); ADD(":"); ADD(env_docker_version);
-    ADD(env_docker_suffix);
+    {
+        /* mount volumes */
+        ADD(" -v "); ADD(path_tmp); ADD(":/tmp:rw");
+        ADD(" -v "); ADD(path_pwd); ADD(":/var/tmp/mercury:rw");
+    }
+
+    {
+        /* composing the repository reference */
+        int is_cross = env_is_true(env_docker_cross);
+        ADD(" ");
+        ADD(env_docker_prefix);
+        ADD(env_docker_channel);
+        if (is_cross) {
+            ADD("-cross");
+        }
+        ADD(":"); ADD(env_docker_version);
+        if (is_cross) {
+            ADD("-"); ADD(env_docker_cross_arch);
+        }
+    }
+    if (is_interactive) {
+        ADD(" -i");
+    } else {
 #ifdef _WIN32
-    /* disable symlinks since they do not work properly on
-     * Windows by default */
-    ADD(" --no-use-symlinks");
+        /* disable symlinks since they do not work properly on
+         * Windows by default */
+        ADD(" --no-use-symlinks");
 #endif
-    /* since we might test out different versions + bitness, use
-     * --use-grade-subdirs by default */
-    ADD(" --use-grade-subdirs");
-    /* as the shared libraries are within the container,
-     * disable shared linkage for now.
-     * TODO: use a volume for the Mercury libraries */
-    ADD(" --linkage static");
-    for (i = 1; i < argc; i++) {
-        ADD(" "); ADD(argv[i]);
+        /* since we might test out different versions + bitness, use
+         * --use-grade-subdirs by default */
+        ADD(" --use-grade-subdirs");
+        /* as the shared libraries are within the container,
+         * disable shared linkage for now.
+         * TODO: use a volume for the Mercury libraries */
+        ADD(" --linkage static");
+
+        {
+            int i;
+            for (i = 1; i < argc; i++) {
+                ADD(" "); ADD(argv[i]);
+            }
+        }
     }
     COMPLETE;
     
+    SECURE(cmd);
     system(cmd);
     return EXIT_SUCCESS;
 }
