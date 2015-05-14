@@ -8,10 +8,11 @@ else
 endif
 BINDIR:=$(PREFIX)/bin
 
-OUT:=bin/mmc-docker$(EXE_EXT)
+CFLAGS:=-Wall -ansi -pedantic-errors
 CP:=cp
 INSTALL:=$(CP) -u
 MKDIR:=mkdir
+OUT:=bin/mmc-docker$(EXE_EXT)
 RM:=/bin/rm
 
 .DEFAULT: default
@@ -30,4 +31,4 @@ install: $(OUT)
 
 $(OUT): src/mmc-docker.c
 	@$(MKDIR) -p bin
-	$(CC) -o $@ $^
+	$(CC) $(CFLAGS) -o $@ $^

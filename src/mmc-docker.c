@@ -1,3 +1,14 @@
+/* vim: ft=c tw=78 ts=4 ff=unix sw=4 et
+ * author: Sebastian Godelet <sebastian.godelet@outlook.com>
+ *
+ * mmc-docker enables consistent cross-platform (Windows and Linux) behaviour
+ * for executing a Docker image containing the Mercury platform.
+ *
+ * Tested on:
+ *  - a normal Linux bash shell
+ *  - a Windows cmd.exe shell
+ *  - a Windows MSys 32-bit bash shell
+ */
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -24,14 +35,26 @@
     } \
 } while (0)
 
+/* command line length limit in WinXP (should be the smallest) */
 #define CMD_LINE_LEN (2048 - 1)
-#define ADD(str) do { buf = append(buf, (str), &limit); } while (0)
-#define COMPLETE do { *buf = '\0'; } while (0)
+
+/* complex string manipulation using weak pointers */
+#define INIT(store) char *_temp_buf = (store)
+#define ADD(str) do { _temp_buf = append(_temp_buf, (str), &limit); } while (0)
+#define COMPLETE do { *_temp_buf = '\0'; } while (0)
+
+char *
+get_env_or_default(char *name, char *def)
+{
+    char *value;
+    return ((value = getenv(name)) ? value : def);
+}
 
 char *
 append(char *str, char *end, int *limit)
 {
     int len = strlen(end);
+
     COND_ERR_EXIT1(len >= *limit, "command line limit of %d reached",
         CMD_LINE_LEN);
     
@@ -48,17 +71,14 @@ append(char *str, char *end, int *limit)
  #endif
 
 void
-unix_path(char *val, char *def)
+unix_path(char *val)
 {
-    int i, len;
+    int len = val ? strlen(val) : 0;
 
-    if (!val) {
-        val = def;
-    }
-    len = val ? strlen(val) : 0;
     COND_ERR_EXIT1(len <= 0, "%s", "value is empty");
     
     if (val[0] != '/') {
+        int i;
         /* e.g. c:\ -> /c/ */
         val[1] = tolower(val[0]);
         val[0] = '/';
@@ -70,24 +90,33 @@ unix_path(char *val, char *def)
     }
 }
 
+#define DEFAULT_PREFIX "sebgod/mercury-"
+#define DEFAULT_VERSION "latest"
+#ifdef _WIN32
+    #define DEFAULT_CHANNEL "stable-cross"
+    #define DEFAULT_SUFFIX  "-i686-w64-mingw32"
+#else
+    #define DEFAULT_CHANNEL "stable"
+    #define DEFAULT_SUFFIX  ""
+#endif
+
 int
 main(int argc, char *argv[])
 {
-    char cmd[CMD_LINE_LEN]; // command line length limit in WinXP
-    char *buf = cmd;
-    char *env_docker, *env_temp;
+    char cmd[CMD_LINE_LEN];
+    INIT(cmd);
+    char *env_docker_prefix;
+    char *env_docker_channel;
+    char *env_docker_version;
+    char *env_docker_suffix;
+    char *env_temp;
     char pwd[FILENAME_MAX] = {0};
     char tmp[FILENAME_MAX] = {0};
     int limit = CMD_LINE_LEN;
     int i, len;
 
-    env_temp = getenv("MERCURY_TMP");
-    if (!env_temp) {
-        env_temp = getenv("TEMP");
-    }
-    if (!env_temp) {
-        env_temp = "/tmp";
-    }
+    env_temp = get_env_or_default("MERCURY_TMP",
+            get_env_or_default("TEMP", "/tmp"));
     len = strlen(env_temp);
     len = MIN(len, sizeof(tmp));
     strncpy(tmp, env_temp, len);
@@ -97,13 +126,17 @@ main(int argc, char *argv[])
     tmp[sizeof(tmp) - 1] = '\0';
     pwd[sizeof(pwd) - 1] = '\0';
 
-    unix_path(pwd, NULL);
-    unix_path(tmp, "/tmp");
+    unix_path(pwd);
+    unix_path(tmp);
 
-    env_docker = getenv("MERCURY_DOCKER");
-    if (!env_docker) {
-        env_docker = "sebgod/mercury-stable:latest";
-    }
+    env_docker_prefix =
+        get_env_or_default("MERCURY_DOCKER_PREFIX", DEFAULT_PREFIX);
+    env_docker_channel =
+        get_env_or_default("MERCURY_DOCKER_CHANNEL", DEFAULT_CHANNEL);
+    env_docker_version =
+        get_env_or_default("MERCURY_DOCKER_VERSION", DEFAULT_VERSION);
+    env_docker_suffix =
+        get_env_or_default("MERCURY_DOCKER_SUFFIX", DEFAULT_SUFFIX);
     
     ADD("docker run -it --read-only=true");
 #ifndef _WIN32
@@ -111,12 +144,19 @@ main(int argc, char *argv[])
 #endif
     ADD(" -v "); ADD(tmp); ADD(":/tmp:rw");
     ADD(" -v "); ADD(pwd); ADD(":/var/tmp/mercury:rw");
-    ADD(" "); ADD(env_docker);
+    /* composing the repository reference */
+    ADD(" ");
+    ADD(env_docker_prefix);
+    ADD(env_docker_channel); ADD(":"); ADD(env_docker_version);
+    ADD(env_docker_suffix);
 #ifdef _WIN32
     /* disable symlinks since they do not work properly on
      * Windows by default */
     ADD(" --no-use-symlinks");
 #endif
+    /* since we might test out different versions + bitness, use
+     * --use-grade-subdirs by default */
+    ADD(" --use-grade-subdirs");
     /* as the shared libraries are within the container,
      * disable shared linkage for now.
      * TODO: use a volume for the Mercury libraries */
