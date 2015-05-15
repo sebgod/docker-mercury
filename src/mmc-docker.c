@@ -53,6 +53,14 @@ get_env_or_default(char *name, char *def)
     return ((value = getenv(name)) ? value : def);
 }
 
+char *
+get_env_or_default2(char *name, char *def, int *has_value)
+{
+    char *value;
+    *has_value = (value = getenv(name)) != NULL;
+    return has_value ? value : def;
+}
+
 int
 env_is_true(char *value)
 {
@@ -125,7 +133,7 @@ main(int argc, char *argv[])
     char *env_docker_cross_arch;
     char path_pwd[FILENAME_MAX] = {0};
     char path_tmp[FILENAME_MAX] = {0};
-    int is_interactive;
+    int is_interactive, is_cross;
 
     env_docker_interactive =
         get_env_or_default("MERCURY_DOCKER_INTERACTIVE", "0");
@@ -157,11 +165,12 @@ main(int argc, char *argv[])
     env_docker_version =
         get_env_or_default("MERCURY_DOCKER_VERSION", DEFAULT_VERSION);
     env_docker_cross =
-        get_env_or_default("MERCURY_DOCKER_CROSS",
-                is_interactive ? "0" : DEFAULT_CROSS);
+        get_env_or_default("MERCURY_DOCKER_CROSS", DEFAULT_CROSS);
     env_docker_cross_arch =
-        get_env_or_default("MERCURY_DOCKER_CROSS_ARCH", DEFAULT_CROSS_ARCH);
-    
+        get_env_or_default2("MERCURY_DOCKER_CROSS_ARCH", DEFAULT_CROSS_ARCH,
+                &is_cross);
+    is_cross = !is_interactive && (is_cross || env_is_true(env_docker_cross));
+
     ADD(env_docker_exe);
     ADD(" run -i --read-only=true");
     if (is_interactive) {
@@ -178,7 +187,6 @@ main(int argc, char *argv[])
 
     {
         /* composing the repository reference */
-        int is_cross = env_is_true(env_docker_cross);
         ADD(" ");
         ADD(env_docker_prefix);
         ADD(env_docker_channel);
