@@ -18,19 +18,25 @@
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
 
 #define STRINGIFY2(s) #s
-#define STRINGIFY(s) STRINGIFY2((s))
+#define STRINGIFY(s) STRINGIFY2(s)
 
-#define AT(str) __FILE__ ":" STRINGIFY(__LINE) ": " STRINGIFY((str))
+#define AT() __FILE__ ":" STRINGIFY(__LINE__) ": "
 
 #define COND_ERR_EXIT1(cond, fmt, param) do { \
     if ((cond)) { \
-        fprintf(stderr, AT(fmt), (param)); \
+        fprintf(stderr, AT() fmt, (param)); \
+        exit(EXIT_FAILURE); \
+    } \
+} while (0)
+#define COND_ERR_EXIT2(cond, fmt, p1, p2) do { \
+    if ((cond)) { \
+        fprintf(stderr, AT() fmt, (p1), (p2)); \
         exit(EXIT_FAILURE); \
     } \
 } while (0)
 #define COND_PERROR_RET(cond, prefix) do { \
     if ((cond)) { \
-        perror(AT((prefix))); \
+        perror(AT() prefix); \
         return EXIT_FAILURE; \
     } \
 } while (0)
@@ -49,8 +55,9 @@
 char *
 get_env_or_default(char *name, char *def)
 {
-    char *value;
-    return ((value = getenv(name)) ? value : def);
+    char *value = ((value = getenv(name)) ? value : def);
+    COND_ERR_EXIT2(value == NULL, "%s is NULL (def=%s)", name, def);
+    return value;
 }
 
 char *
@@ -58,7 +65,11 @@ get_env_or_default2(char *name, char *def, int *has_value)
 {
     char *value;
     *has_value = (value = getenv(name)) != NULL;
-    return has_value ? value : def;
+    if (!*has_value) {
+        value = def;
+    }
+    COND_ERR_EXIT2(value == NULL, "%s is NULL (def=%s)", name, def);
+    return value;
 }
 
 int
@@ -80,12 +91,12 @@ append(char *str, char *end, int *limit)
 }
 
 #ifdef _WIN32
-    #include <direct.h>
-    #define GetCurrentDir _getcwd
+#   include <direct.h>
+#   define GetCurrentDir _getcwd
 #else
-    #include <unistd.h>
-    #define GetCurrentDir getcwd
- #endif
+#   include <unistd.h>
+#   define GetCurrentDir getcwd
+#endif
 
 void
 unix_path(char *val)
@@ -111,11 +122,12 @@ unix_path(char *val)
 #define DEFAULT_PREFIX "sebgod/mercury-"
 #define DEFAULT_CHANNEL "stable"
 #define DEFAULT_VERSION "latest"
-#define DEFAULT_CROSS_ARCH "i686-w64-mingw32"
+#define DEFAULT_CROSS_ARCH "i686"
+#define DEFAULT_CROSS_TYPE "w64-mingw32"
 #ifdef _WIN32
-    #define DEFAULT_CROSS "1"
+#   define DEFAULT_CROSS "1"
 #else
-    #define DEFAULT_CROSS "0"
+#   define DEFAULT_CROSS "0"
 #endif
 
 int
@@ -131,9 +143,10 @@ main(int argc, char *argv[])
     char *env_docker_version;
     char *env_docker_cross;
     char *env_docker_cross_arch;
-    char path_pwd[FILENAME_MAX] = {0};
-    char path_tmp[FILENAME_MAX] = {0};
-    int is_interactive, is_cross;
+    char *env_docker_cross_type;
+    char path_pwd[FILENAME_MAX - 1] = {0};
+    char path_tmp[FILENAME_MAX - 1] = {0};
+    int is_interactive, is_cross, is_cross_arch_set, is_cross_type_set;
 
     env_docker_interactive =
         get_env_or_default("MERCURY_DOCKER_INTERACTIVE", "0");
@@ -168,8 +181,14 @@ main(int argc, char *argv[])
         get_env_or_default("MERCURY_DOCKER_CROSS", DEFAULT_CROSS);
     env_docker_cross_arch =
         get_env_or_default2("MERCURY_DOCKER_CROSS_ARCH", DEFAULT_CROSS_ARCH,
-                &is_cross);
-    is_cross = !is_interactive && (is_cross || env_is_true(env_docker_cross));
+                &is_cross_arch_set);
+    env_docker_cross_type =
+        get_env_or_default2("MERCURY_DOCKER_CROSS_TYPE", DEFAULT_CROSS_TYPE,
+                &is_cross_type_set);
+
+    is_cross = !is_interactive &&
+        (is_cross_arch_set || is_cross_type_set ||
+            env_is_true(env_docker_cross));
 
     ADD(env_docker_exe);
     ADD(" run -i --read-only=true");
@@ -196,6 +215,7 @@ main(int argc, char *argv[])
         ADD(":"); ADD(env_docker_version);
         if (is_cross) {
             ADD("-"); ADD(env_docker_cross_arch);
+            ADD("-"); ADD(env_docker_cross_type);
         }
     }
     if (is_interactive) {
