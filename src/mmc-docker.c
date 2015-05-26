@@ -178,7 +178,8 @@ main(int argc, char *argv[])
     env_docker_version =
         get_env_or_default("MERCURY_DOCKER_VERSION", DEFAULT_VERSION);
     env_docker_cross =
-        get_env_or_default("MERCURY_DOCKER_CROSS", DEFAULT_CROSS);
+        get_env_or_default("MERCURY_DOCKER_CROSS",
+                is_interactive ? "0" : DEFAULT_CROSS);
     env_docker_cross_arch =
         get_env_or_default2("MERCURY_DOCKER_CROSS_ARCH", DEFAULT_CROSS_ARCH,
                 &is_cross_arch_set);
@@ -186,9 +187,9 @@ main(int argc, char *argv[])
         get_env_or_default2("MERCURY_DOCKER_CROSS_TYPE", DEFAULT_CROSS_TYPE,
                 &is_cross_type_set);
 
-    is_cross = !is_interactive &&
-        (is_cross_arch_set || is_cross_type_set ||
-            env_is_true(env_docker_cross));
+    is_cross = is_cross_arch_set
+        || is_cross_type_set
+        || env_is_true(env_docker_cross);
 
     ADD(env_docker_exe);
     ADD(" run -i --read-only=true");
