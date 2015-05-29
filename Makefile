@@ -1,6 +1,5 @@
-CC:=gcc
-ifdef WINDIR
-    PREFIX:=$(USERPROFILE)
+ifeq ($(OS),Windows_NT)
+    PREFIX:=$(subst \,/,$(USERPROFILE))
     EXE_EXT:=.exe
 else
     PREFIX:=/usr/local
@@ -8,6 +7,7 @@ else
 endif
 BINDIR:=$(PREFIX)/bin
 
+CC:=gcc
 CFLAGS:=-Wall -ansi -pedantic-errors
 CP:=cp
 INSTALL:=$(CP) -u

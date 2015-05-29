@@ -75,7 +75,7 @@ get_env_or_default2(char *name, char *def, int *has_value)
 int
 env_is_true(char *value)
 {
-    return !strcmp(value, "1");
+    return !strncmp(value, "1", 1);
 }
 
 char *
