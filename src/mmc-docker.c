@@ -52,19 +52,53 @@
 #define COMPLETE do { *_temp_buf = '\0'; } while (0)
 #define SECURE(x) do { (x)[sizeof((x)) - 1] = '\0'; } while (0)
 
+static
+int
+is_not_null_or_whitespace(char *value)
+{
+    if (!value) {
+        return 0;
+    }
+    for (; *value != '\0'; value++) {
+        if (!isspace(*value)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static
+int
+contains_whitespace(char *value)
+{
+    COND_ERR_EXIT1(value == NULL, "%s is NULL", "value");
+
+    for (; *value != '\0'; value++) {
+        if (isspace(*value)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+
+static
 char *
 get_env_or_default(char *name, char *def)
 {
-    char *value = ((value = getenv(name)) ? value : def);
+    char *value = is_not_null_or_whitespace(value = getenv(name))
+            ? value
+            : def;
     COND_ERR_EXIT2(value == NULL, "%s is NULL (def=%s)", name, def);
     return value;
 }
 
+static
 char *
 get_env_or_default2(char *name, char *def, int *has_value)
 {
     char *value;
-    *has_value = (value = getenv(name)) != NULL;
+    *has_value = is_not_null_or_whitespace(value = getenv(name));
     if (!*has_value) {
         value = def;
     }
@@ -72,12 +106,14 @@ get_env_or_default2(char *name, char *def, int *has_value)
     return value;
 }
 
+static
 int
 env_is_true(char *value)
 {
     return !strncmp(value, "1", 1);
 }
 
+static
 char *
 append(char *str, char *end, int *limit)
 {
@@ -98,6 +134,7 @@ append(char *str, char *end, int *limit)
 #   define GetCurrentDir getcwd
 #endif
 
+static
 void
 unix_path(char *val)
 {
@@ -136,8 +173,8 @@ main(int argc, char *argv[])
     char cmd[CMD_LINE_LEN];
     INIT(cmd);
     char *env_tmp;
+    char *env_docker_entrypoint;
     char *env_docker_exe;
-    char *env_docker_interactive;
     char *env_docker_prefix;
     char *env_docker_channel;
     char *env_docker_version;
@@ -146,12 +183,11 @@ main(int argc, char *argv[])
     char *env_docker_cross_type;
     char path_pwd[FILENAME_MAX - 1] = {0};
     char path_tmp[FILENAME_MAX - 1] = {0};
-    int is_interactive, is_cross, is_cross_arch_set, is_cross_type_set;
+    int is_entrypoint_set, is_cross, is_cross_arch_set, is_cross_type_set;
 
-    env_docker_interactive =
-        get_env_or_default("MERCURY_DOCKER_INTERACTIVE", "0");
-    is_interactive = env_is_true(env_docker_interactive);
-
+    env_docker_entrypoint =
+        get_env_or_default2("MERCURY_DOCKER_ENTRYPOINT", "",
+                &is_entrypoint_set);
     {
         int len;
         env_tmp = get_env_or_default("MERCURY_TMP",
@@ -179,7 +215,7 @@ main(int argc, char *argv[])
         get_env_or_default("MERCURY_DOCKER_VERSION", DEFAULT_VERSION);
     env_docker_cross =
         get_env_or_default("MERCURY_DOCKER_CROSS",
-                is_interactive ? "0" : DEFAULT_CROSS);
+                is_entrypoint_set ? "0" : DEFAULT_CROSS);
     env_docker_cross_arch =
         get_env_or_default2("MERCURY_DOCKER_CROSS_ARCH", DEFAULT_CROSS_ARCH,
                 &is_cross_arch_set);
@@ -193,8 +229,8 @@ main(int argc, char *argv[])
 
     ADD(env_docker_exe);
     ADD(" run -i --read-only=true");
-    if (is_interactive) {
-        ADD(" --entrypoint bash");
+    if (is_entrypoint_set) {
+        ADD(" --entrypoint "); ADD(env_docker_entrypoint);
     }
 #ifndef _WIN32
     ADD(" -u `id -u`");
@@ -219,9 +255,7 @@ main(int argc, char *argv[])
             ADD("-"); ADD(env_docker_cross_type);
         }
     }
-    if (is_interactive) {
-        ADD(" -i");
-    } else {
+    if (!is_entrypoint_set) {
 #ifdef _WIN32
         /* disable symlinks since they do not work properly on
          * Windows by default */
@@ -234,11 +268,15 @@ main(int argc, char *argv[])
          * disable shared linkage for now.
          * TODO: use a volume for the Mercury libraries */
         ADD(" --linkage static");
-
-        {
-            int i;
-            for (i = 1; i < argc; i++) {
-                ADD(" "); ADD(argv[i]);
+    }
+    {
+        int i;
+        for (i = 1; i < argc; i++) {
+            ADD(" ");
+            if (contains_whitespace(argv[i])) {
+                ADD("\""); ADD(argv[i]); ADD("\"");
+            } else {
+                ADD(argv[i]);
             }
         }
     }
