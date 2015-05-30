@@ -234,6 +234,7 @@ main(int argc, char *argv[])
     }
 #ifndef _WIN32
     ADD(" -u `id -u`");
+    ADD(" -t");
 #endif
     {
         /* mount volumes */
