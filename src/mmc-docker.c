@@ -45,7 +45,8 @@
 #define CMD_LINE_LEN (2048 - 1)
 
 /* complex string manipulation using weak pointers */
-#define INIT(store) char *_temp_buf = (store); \
+#define INIT(store) \
+    char *_temp_buf = (store); \
     int _temp_limit = sizeof((store))
 #define ADD(str) \
     do { _temp_buf = append(_temp_buf, (str), &_temp_limit); } while (0)
