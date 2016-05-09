@@ -45,12 +45,15 @@
 #define CMD_LINE_LEN (2048 - 1)
 
 /* complex string manipulation using weak pointers */
-#define INIT(store) \
-    char *_temp_buf = (store); \
-    int _temp_limit = sizeof((store))
-#define ADD(str) \
-    do { _temp_buf = append(_temp_buf, (str), &_temp_limit); } while (0)
-#define COMPLETE do { *_temp_buf = '\0'; } while (0)
+#define INIT(id, store) \
+    char *_temp_buf##id = (store); \
+    int _temp_limit##id = sizeof((store))
+#define ADD(id, str) \
+    do { \
+        _temp_buf##id = append(_temp_buf##id, (str), &_temp_limit##id); \
+    } while (0)
+#define COMPLETE(id) do { *_temp_buf##id = '\0'; } while (0)
+
 #define SECURE(x) do { (x)[sizeof((x)) - 1] = '\0'; } while (0)
 
 static
@@ -172,7 +175,7 @@ int
 main(int argc, char *argv[])
 {
     char cmd[CMD_LINE_LEN];
-    INIT(cmd);
+    INIT(1, cmd);
     char *env_tmp;
     char *env_docker_entrypoint;
     char *env_docker_exe;
@@ -228,61 +231,61 @@ main(int argc, char *argv[])
         || is_cross_type_set
         || env_is_true(env_docker_cross);
 
-    ADD(env_docker_exe);
-    ADD(" run -i --read-only=true");
+    ADD(1, env_docker_exe);
+    ADD(1, " run -i --read-only=true");
     if (is_entrypoint_set) {
-        ADD(" --entrypoint "); ADD(env_docker_entrypoint);
+        ADD(1, " --entrypoint "); ADD(1, env_docker_entrypoint);
     }
 #ifndef _WIN32
-    ADD(" -u `id -u`");
-    ADD(" -t");
+    ADD(1, " -u `id -u`");
+    ADD(1, " -t");
 #endif
     {
         /* mount volumes */
-        ADD(" -v "); ADD(path_tmp); ADD(":/tmp:rw");
-        ADD(" -v "); ADD(path_pwd); ADD(":/var/tmp/mercury:rw");
+        ADD(1, " -v "); ADD(1, path_tmp); ADD(1, ":/tmp:rw");
+        ADD(1, " -v "); ADD(1, path_pwd); ADD(1, ":/var/tmp/mercury:rw");
     }
 
     {
         /* composing the repository reference */
-        ADD(" ");
-        ADD(env_docker_prefix);
-        ADD(env_docker_channel);
+        ADD(1, " ");
+        ADD(1, env_docker_prefix);
+        ADD(1, env_docker_channel);
         if (is_cross) {
-            ADD("-cross");
+            ADD(1, "-cross");
         }
-        ADD(":"); ADD(env_docker_version);
+        ADD(1, ":"); ADD(1, env_docker_version);
         if (is_cross) {
-            ADD("-"); ADD(env_docker_cross_arch);
-            ADD("-"); ADD(env_docker_cross_type);
+            ADD(1, "-"); ADD(1, env_docker_cross_arch);
+            ADD(1, "-"); ADD(1, env_docker_cross_type);
         }
     }
     if (!is_entrypoint_set) {
 #ifdef _WIN32
         /* disable symlinks since they do not work properly on
          * Windows by default */
-        ADD(" --no-use-symlinks");
+        ADD(1, " --no-use-symlinks");
 #endif
         /* since we might test out different versions + bitness, use
          * --use-grade-subdirs by default */
-        ADD(" --use-grade-subdirs");
+        ADD(1, " --use-grade-subdirs");
         /* as the shared libraries are within the container,
          * disable shared linkage for now.
          * TODO: use a volume for the Mercury libraries */
-        ADD(" --linkage static");
+        ADD(1, " --linkage static");
     }
     {
         int i;
         for (i = 1; i < argc; i++) {
-            ADD(" ");
+            ADD(1, " ");
             if (contains_whitespace(argv[i])) {
-                ADD("\""); ADD(argv[i]); ADD("\"");
+                ADD(1, "\""); ADD(1, argv[i]); ADD(1, "\"");
             } else {
-                ADD(argv[i]);
+                ADD(1, argv[i]);
             }
         }
     }
-    COMPLETE;
+    COMPLETE(1);
     
     SECURE(cmd);
     system(cmd);
